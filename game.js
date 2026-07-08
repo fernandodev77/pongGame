@@ -60,6 +60,18 @@ let keys = {
 let mouseY = canvas.height / 2;
 let touchActive = false;
 
+// AI Configuration - Predictive AI
+const aiConfig = {
+    reactionDelay: 0,      // Frames to delay AI reaction (0 = instant)
+    predictionAccuracy: 1, // 0.5 = 50% accurate, 1 = perfect prediction
+    decisionBuffer: 15,    // Pixels of buffer when positioning
+    maxSpeed: paddleSpeed * 0.9
+};
+
+// AI tracking
+let aiReactionCounter = 0;
+let predictedBallY = canvas.height / 2;
+
 // Input handling - Keyboard
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ') {
@@ -146,6 +158,66 @@ function resetBall() {
     
     ball.dx = (Math.random() > 0.5 ? 1 : -1) * speed * Math.cos(angle);
     ball.dy = speed * Math.sin(angle);
+    
+    aiReactionCounter = 0;
+    predictedBallY = canvas.height / 2;
+}
+
+// Predictive AI - Calculate where ball will be when it reaches computer paddle
+function predictBallTrajectory() {
+    // Only predict if ball is moving toward computer
+    if (ball.dx <= 0) {
+        return canvas.height / 2; // Default to center if ball moving away
+    }
+
+    // Calculate time for ball to reach computer paddle
+    const distanceToComputer = computer.x - ball.x;
+    const timeToReach = Math.abs(distanceToComputer / ball.dx);
+
+    // Simulate ball trajectory
+    let simulatedY = ball.y;
+    let simulatedDy = ball.dy;
+
+    for (let i = 0; i < timeToReach; i++) {
+        simulatedY += simulatedDy;
+
+        // Account for wall bounces
+        if (simulatedY - ball.radius <= 0 || simulatedY + ball.radius >= canvas.height) {
+            simulatedDy *= -1;
+            simulatedY = Math.max(ball.radius, Math.min(canvas.height - ball.radius, simulatedY));
+        }
+    }
+
+    // Add imperfection to prediction (simulates "difficulty")
+    const predictionError = (Math.random() - 0.5) * canvas.height * (1 - aiConfig.predictionAccuracy);
+    return simulatedY + predictionError;
+}
+
+// AI Decision Making
+function updateComputerAI() {
+    // Reaction delay - accumulates frames before AI reacts
+    if (aiReactionCounter > 0) {
+        aiReactionCounter--;
+        return; // Don't move while in reaction delay
+    }
+
+    // Calculate predicted ball position
+    predictedBallY = predictBallTrajectory();
+
+    // AI targets the predicted position with a buffer zone
+    const computerCenter = computer.y + computer.height / 2;
+    const targetY = predictedBallY;
+    const errorMargin = aiConfig.decisionBuffer;
+
+    // Intelligent movement decision
+    if (computerCenter < targetY - errorMargin) {
+        // Move down
+        computer.y = Math.min(canvas.height - computer.height, computer.y + aiConfig.maxSpeed);
+    } else if (computerCenter > targetY + errorMargin) {
+        // Move up
+        computer.y = Math.max(0, computer.y - aiConfig.maxSpeed);
+    }
+    // If within error margin, stay still (less twitchy)
 }
 
 // Update game logic
@@ -164,16 +236,8 @@ function update() {
     const targetY = mouseY - player.height / 2;
     player.y = Math.max(0, Math.min(canvas.height - player.height, targetY));
 
-    // Computer AI - smooth following
-    const computerCenter = computer.y + computer.height / 2;
-    const ballCenter = ball.y;
-    const aiSpeed = paddleSpeed * 0.8; // Slightly slower than player for balance
-
-    if (computerCenter < ballCenter - 20) {
-        computer.y = Math.min(canvas.height - computer.height, computer.y + aiSpeed);
-    } else if (computerCenter > ballCenter + 20) {
-        computer.y = Math.max(0, computer.y - aiSpeed);
-    }
+    // Update AI using predictive algorithm
+    updateComputerAI();
 
     // Ball movement
     ball.x += ball.dx;
@@ -265,6 +329,10 @@ function draw() {
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // DEBUG: Draw predicted ball position (optional - uncomment to see AI prediction)
+    // ctx.fillStyle = 'rgba(255, 0, 255, 0.3)';
+    // ctx.fillRect(computer.x - 50, predictedBallY - 5, 40, 10);
 
     ctx.shadowBlur = 0;
 }
